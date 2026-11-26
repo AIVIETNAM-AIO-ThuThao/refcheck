@@ -162,7 +162,7 @@ def search_by_title(title: str, cited_year: str = "", full_text: str = "") -> di
 
 
 # ---------------------------------------------------------------- đối chiếu từng trường
-def check_journal_in_text(cited_text: str, registry_journals) -> dict:
+def check_journal_in_text(cited_text: str, registry_journals, lenient: bool = False) -> dict:
     if isinstance(registry_journals, str):
         registry_journals = [registry_journals]
     registry_journals = [j for j in registry_journals or [] if j]
@@ -171,11 +171,13 @@ def check_journal_in_text(cited_text: str, registry_journals) -> dict:
 
     cited_key = norm_key(html.unescape(cited_text).replace("&", " and "))
     for jt in registry_journals:
-        words = [w for w in norm_key(html.unescape(jt).replace("&", " and ")).split() if w not in JOURNAL_STOP_WORDS]
-        if words and all(word_in(w, cited_key) for w in words):
+        name = html.unescape(jt)
+        if lenient:                               # kỷ yếu: bỏ phần trong ngoặc như "(Cat. No.99CH36288C)"
+            name = re.sub(r'\([^)]*\)', ' ', name)
+        words = [w for w in norm_key(name.replace("&", " and ")).split() if w not in JOURNAL_STOP_WORDS]
+        hits = sum(word_in(w, cited_key) for w in words)
+        if words and (hits == len(words) or (lenient and hits * 3 >= len(words) * 2)):
             return {"status": "MATCH", "message": ""}
-    return {"status": "JOURNAL_MISMATCH",
-            "message": f"Tên tạp chí không khớp. Tên đúng: \"{registry_journals[0]}\"."}
 
 
 def check_pages(cited_pages: str, registry_pages: str) -> dict:
@@ -203,7 +205,8 @@ def _check_record_fields(doc, para, text: str, rec: dict, cited_title: str, chec
         add_review_comment(doc, para, author_result["message"])
         comments += 1
 
-    journal_result = check_journal_in_text(text, rec.get("container_titles", []))
+    lenient = rec.get("type") in ("proceedings-article", "book-chapter")   # tên kỷ yếu/sách mỗi nơi ghi một kiểu
+    journal_result = check_journal_in_text(text, rec.get("container_titles", []), lenient=lenient)
     if journal_result["status"] not in ("MATCH", "NO_REGISTRY_JOURNAL"):
         add_review_comment(doc, para, journal_result["message"])
         comments += 1
