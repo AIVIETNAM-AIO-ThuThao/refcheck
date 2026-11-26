@@ -71,7 +71,6 @@ if st.button("Bắt đầu kiểm tra", type="primary", disabled=not files):
                     st.error(f"Không xử lý được file này: {type(e).__name__}: {e}")
             with st.expander("Nhật ký chi tiết"):
                 st.code(log.getvalue() or "(trống)", language=None)
-            overall.progress(i / len(files), text=f"Đã xong {i}/{len(files)} file")
     finally:
         lock.release()
 
