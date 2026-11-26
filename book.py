@@ -500,12 +500,17 @@ def process_book_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
 
     pooled_years = collect_all_valid_years(candidates, cited_title)
 
+        def _rank(ev):
+        # Ưu tiên: khớp nhiều trường > đúng lần tái bản > có dữ liệu NXB > năm gần năm trích dẫn > tiêu đề giống
+        info_ = ev["book_info"]
+        y = info_.get("year", "")
+        year_gap = abs(int(y) - int(cited_year)) if y.isdigit() and cited_year.isdigit() else 999
+        return (ev["score"], ev["exact_ed"], bool(info_.get("publisher")), -year_gap, ev["title_sim"])
+
     best_eval = None
     for cand in candidates:
         ev = evaluate_book_4_fields(text, cited_title, cited_year, cand, pooled_years)
-        if best_eval is None or (ev["score"], ev["exact_ed"], ev["title_sim"]) > (
-            best_eval["score"], best_eval["exact_ed"], best_eval["title_sim"]
-        ):
+        if best_eval is None or _rank(ev) > _rank(best_eval):
             best_eval = ev
 
     score = best_eval["score"]
@@ -514,6 +519,10 @@ def process_book_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
 
     if score == 4:
         print("    [BOOK] Khớp hoàn hảo 4/4 thành phần → OK")
+        return True, 0, 0
+    if score == 3 and not best_eval["mismatched_details"]:
+        # 3 trường khớp, trường còn lại KHÔNG có dữ liệu để so (thường là NXB) -> không có gì sai để báo
+        print("    [BOOK] Khớp 3/4, trường còn lại thiếu dữ liệu đối chiếu → OK")
         return True, 0, 0
 
     if score in (2, 3) or title_sim >= 0.90:
