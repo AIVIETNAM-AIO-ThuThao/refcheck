@@ -18,17 +18,16 @@ from docx.text.run import Run
 INPUT_FILE = Path(r"C:\Users\ThuThao\Desktop\TÀI LIỆU THAM KHẢO1.docx")   # có thể truyền qua dòng lệnh
 OUTPUT_FILE = INPUT_FILE.with_name(INPUT_FILE.stem + "_reviewed.docx")
 AUTHOR_NAME = "BTV"
-EMAIL = os.environ.get("REFCHECK_EMAIL", "akitokusa@gmail.com")   # đọc từ Secrets REFCHECK_EMAIL; ĐỔI email mẫu nếu chạy trên máy
+EMAIL = os.environ.get("REFCHECK_EMAIL", "akitokusa@example.com")   # đọc từ Secrets REFCHECK_EMAIL; ĐỔI email mẫu nếu chạy trên máy
 GOOGLE_BOOKS_API_KEY = os.environ.get("GOOGLE_BOOKS_API_KEY", "")
 TITLE_MATCH_THRESHOLD = 0.85
 WEB_TITLE_THRESHOLD = 0.78
 REQUEST_DELAY = 0.5               # khoảng cách tối thiểu (giây) giữa 2 request tới CÙNG một máy chủ
 CURRENT_YEAR = date.today().year
 
-# Tài liệu tiếng Việt không tìm thấy trên CSDL quốc tế: True = tô vàng như "không tồn tại",
-# False = chỉ comment "cần kiểm tra thủ công" (vì tạp chí/sách trong nước thường không có DOI/ISBN trên các API này).
-HIGHLIGHT_UNVERIFIED_VN = False
 
+HIGHLIGHT_UNVERIFIED_VN = False
+HIGHLIGHT_UNCHECKED = False
 BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
