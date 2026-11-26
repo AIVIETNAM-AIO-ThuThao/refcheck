@@ -178,7 +178,8 @@ def check_journal_in_text(cited_text: str, registry_journals, lenient: bool = Fa
         hits = sum(word_in(w, cited_key) for w in words)
         if words and (hits == len(words) or (lenient and hits * 3 >= len(words) * 2)):
             return {"status": "MATCH", "message": ""}
-
+    return {"status": "JOURNAL_MISMATCH",
+            "message": f"Tên tạp chí không khớp. Tên đúng: \"{registry_journals[0]}\"."}
 
 def check_pages(cited_pages: str, registry_pages: str) -> dict:
     if not registry_pages:

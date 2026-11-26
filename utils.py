@@ -115,7 +115,7 @@ def http_get(url: str, **kwargs) -> requests.Response:
 
 # ============ CHUẨN HÓA VĂN BẢN ============
 def normalize_text(text: str) -> str:
-    text = html.unescape(text or "")
+    text = unicodedata.normalize("NFC", html.unescape(text or ""))   # gộp Unicode tổ hợp (NFD) về dựng sẵn (NFC)
     text = re.sub(r'[\u00ad\u200b-\u200d\u2060\ufeff]', '', text)   # soft hyphen, ký tự rộng 0 (hay lẫn khi copy từ PDF/Word)
     text = re.sub(r'<[^>]+>', ' ', text)          # Crossref hay chèn <i>, <sub>, <scp> vào tiêu đề
     text = text.lower()
