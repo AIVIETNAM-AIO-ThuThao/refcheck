@@ -22,9 +22,9 @@ def job_lock() -> threading.Lock:
 
 st.title("📚 Kiểm tra Tài liệu tham khảo")
 st.write(
-    "Tải lên một hoặc nhiều file Word (.docx) **chỉ chứa danh mục tài liệu tham khảo**. "
-    "Chương trình đối chiếu từng mục với Crossref, DataCite, Google Books, Open Library, OpenAlex "
-    "và trang web gốc, rồi trả về file có **comment** (tác giả BTV) và **tô vàng** các mục không tìm thấy."
+    "Tải lên một hoặc nhiều file Word (.docx) **chỉ chứa Danh mục Tài liệu tham khảo**. "
+    "Chương trình đối chiếu với Crossref, DataCite, Google Books, Open Library, OpenAlex "
+    "và trang web gốc, rồi trả về file có **comment** (BTV) và **tô vàng** các mục không tìm thấy."
 )
 
 files = st.file_uploader("Chọn file .docx (có thể chọn nhiều file)", type=["docx"], accept_multiple_files=True)
@@ -39,7 +39,6 @@ if st.button("Bắt đầu kiểm tra", type="primary", disabled=not files):
         with st.spinner("Đang có người khác chạy kiểm tra, vui lòng chờ..."):
             lock.acquire()
     try:
-        overall = st.progress(0.0, text="Chuẩn bị...")
         for i, up in enumerate(files, start=1):
             st.subheader(f"{i}/{len(files)}. {up.name}")
             bar = st.progress(0.0, text="Đang đọc file...")
@@ -91,4 +90,4 @@ if st.session_state.results:
         st.download_button("⬇️ Tải tất cả (.zip)", buf.getvalue(), file_name="ket_qua_kiem_tra_TLTK.zip",
                            mime="application/zip", key="dl_zip")
 
-st.caption("Lưu ý: tài liệu tiếng Việt không có trên CSDL quốc tế chỉ được ghi chú 'cần kiểm tra thủ công', không tô vàng.")
+st.caption("Lưu ý: Tài liệu tiếng Việt không có trên CSDL quốc tế chỉ được ghi chú 'cần kiểm tra thủ công', không tô vàng.")
