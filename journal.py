@@ -162,6 +162,30 @@ def search_by_title(title: str, cited_year: str = "", full_text: str = "") -> di
     return best
 
 
+def _openalex_record(w: dict) -> dict:
+    w_title = w.get("display_name") or w.get("title") or ""
+    names = [a.get("author", {}).get("display_name", "") for a in w.get("authorships", [])]
+    doi = re.sub(r'^https?://(dx\.)?doi\.org/', '', w.get("doi") or "", flags=re.IGNORECASE)
+    return {"status": "OK", "source": "openalex", "title": w_title, "title_variants": [w_title] if w_title else [],
+            "authors": parse_author_dicts([n for n in names if n], source="book_api"),
+            "year": str(w.get("publication_year") or ""), "doi": doi,
+            # nơi đăng/số trang trên OpenAlex hay ghi khác (vd. "arXiv") -> không dùng để bắt lỗi
+            "container_titles": [], "page": "", "type": w.get("type", "")}
+
+
+def lookup_doi_openalex(doi: str) -> dict:
+    """Tra DOI trên OpenAlex — dùng khi Crossref/DataCite bị lỗi kết nối hoặc giới hạn truy cập."""
+    try:
+        resp = http_get(f"{OPENALEX_API}/doi:{quote(doi, safe='/')}", params={"mailto": EMAIL})
+    except Exception as e:
+        return {"status": "ERROR", "message": f"Lỗi kết nối OpenAlex: {e}"}
+    if resp.status_code == 404:
+        return {"status": "DOI_NOT_FOUND", "message": f"DOI '{doi}' không có trên OpenAlex."}
+    if resp.status_code != 200:
+        return {"status": "ERROR", "message": f"OpenAlex HTTP {resp.status_code}"}
+    return _openalex_record(resp.json())
+
+
 def search_openalex(title: str, cited_year: str = "", full_text: str = "") -> dict:
     """Dự phòng khi Crossref không có: OpenAlex gồm cả bài hội nghị không có DOI Crossref (NeurIPS, ICLR, ICML...)
     và bản arXiv (DOI DataCite 10.48550/...). Chỉ dùng để xác nhận bài có thật, tác giả, năm và DOI nếu có."""
@@ -178,30 +202,26 @@ def search_openalex(title: str, cited_year: str = "", full_text: str = "") -> di
     cited_key = norm_key(full_text or title)
     best, best_key = None, None
     for w in works:
-        w_title = w.get("display_name") or w.get("title") or ""
-        if not w_title:
+        rec = _openalex_record(w)
+        if not rec["title"]:
             continue
-        sim = title_similarity(title, [w_title], full_text)
-        names = [a.get("author", {}).get("display_name", "") for a in w.get("authorships", [])]
-        authors = parse_author_dicts([n for n in names if n], source="book_api")
-        year = str(w.get("publication_year") or "")
+        sim = title_similarity(title, rec["title_variants"], full_text)
+        year = rec["year"]
         year_ok = bool(cited_year and year and abs(int(year) - int(cited_year)) <= 1)
-        author_ok = bool(authors) and word_in(authors[0]["family"], cited_key)
+        author_ok = bool(rec["authors"]) and word_in(rec["authors"][0]["family"], cited_key)
         key = (sim >= TITLE_MATCH_THRESHOLD and (author_ok or year_ok), author_ok + year_ok, sim)
         if best_key is None or key > best_key:
-            doi = re.sub(r'^https?://(dx\.)?doi\.org/', '', w.get("doi") or "", flags=re.IGNORECASE)
-            best, best_key = {"status": "FOUND", "source": "openalex", "similarity": sim, "title": w_title,
-                              "title_variants": [w_title], "authors": authors, "year": year, "doi": doi,
-                              "container_titles": [], "page": "", "type": w.get("type", "")}, key
+            rec.update(status="FOUND", similarity=sim)
+            best, best_key = rec, key
     if best is None or not best_key[0]:
         return {"status": "LOW_MATCH", "message": "Không tìm thấy bài viết khớp trên Crossref và OpenAlex."}
     return best
 
 
 def _search_any(title: str, cited_year: str, full_text: str) -> dict:
-    """Tìm trên Crossref; không thấy thì tìm tiếp trên OpenAlex."""
+    """Tìm trên Crossref; không thấy HOẶC Crossref lỗi/giới hạn truy cập thì tìm tiếp trên OpenAlex."""
     sr = search_by_title(title, cited_year, full_text)
-    if sr["status"] in ("NOT_FOUND", "LOW_MATCH"):
+    if sr["status"] in ("NOT_FOUND", "LOW_MATCH", "ERROR"):
         oa = search_openalex(title, cited_year, full_text)
         if oa["status"] == "FOUND":
             print(f"    [OPENALEX] Tìm thấy: {oa['title'][:50]}... (DOI: {oa['doi'] or 'không có'})")
@@ -314,7 +334,12 @@ def process_journal_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
                 return _unchecked(doc, para, f"DOI '{cited_doi}' không tồn tại; tìm theo tiêu đề bị lỗi: {sr['message']}")
             return _not_found(doc, para, text, f"DOI '{cited_doi}' không tồn tại và không tìm thấy bài viết tương ứng.")
 
-        print(f"    [DOI] {cited_doi} → ERROR: {doi_check.get('message')}")
+        print(f"    [DOI] {cited_doi} → ERROR: {doi_check.get('message')} → thử OpenAlex")
+        oa = lookup_doi_openalex(cited_doi)
+        if oa["status"] == "OK":
+            print(f"    [OPENALEX] DOI {cited_doi} → OK")
+            comments = _check_record_fields(doc, para, text, oa, cited_title, check_title=True)
+            return True, comments, 0
         return _unchecked(doc, para, doi_check.get("message", "lỗi kết nối"))
 
     # Bước 2: Không có DOI -> tìm bằng tiêu đề
