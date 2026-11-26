@@ -186,7 +186,11 @@ def highlight_whole_para(para):
     for run in get_para_runs(para):
         if run.text.strip():
             run.font.highlight_color = WD_COLOR_INDEX.YELLOW
-
+            rpr = run._r.rPr
+            change = rpr.find(qn('w:rPrChange')) if rpr is not None else None
+            if change is not None:
+                rpr.remove(change)
+                rpr.append(change)
 
 def _lift_comment_markers(para, comment_id: int):
     """Nếu dấu mốc comment rơi vào trong <w:hyperlink>, đưa chúng ra ngoài ở cấp đoạn văn."""
