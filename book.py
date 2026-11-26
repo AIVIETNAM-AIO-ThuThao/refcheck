@@ -2,6 +2,7 @@ import re
 import difflib
 import html
 
+import ppdvn
 from utils import (
     CURRENT_YEAR,
     EMAIL,
@@ -382,11 +383,17 @@ def evaluate_book_4_fields(
     author_hint = text.split("(")[0].strip() if "(" in text else ""
     author_hint_norm = normalize_text(author_hint)
 
-    author_res = check_authors(text, api_authors)
+    if book_info.get("author_text"):          # nguồn Cục Xuất bản: cột tác giả là văn bản tự do
+        ok = ppdvn.cited_authors_match(text, book_info["author_text"])
+        author_res = {"status": "MATCH" if ok else "MISMATCH"}
+    else:
+        author_res = check_authors(text, api_authors)
     if author_res["status"] == "MATCH":
         matched_fields.append("Tên tác giả")
     elif author_hint_norm and len(author_hint_norm) > 4 and author_hint_norm in desc_norm:
         matched_fields.append("Tên tác giả/dịch giả")
+    elif book_info.get("author_text"):
+        mismatched_details.append(f"Tác giả theo Cục Xuất bản: {book_info['author_text']}")
     elif api_authors:
         all_formatted = [format_author_apa(a.get("family", ""), a.get("given", ""))
                          for a in api_authors if a.get("family")]
@@ -446,7 +453,10 @@ def evaluate_book_4_fields(
     if year_matched:
         matched_fields.append("Năm xuất bản")
     elif api_year:
-        if book_info.get("exact_edition_matched"):
+        if book_info.get("source") == "ppdvn":
+            mismatched_details.append("Năm xác nhận đăng ký xuất bản tại Cục Xuất bản: "
+                                      + ", ".join(book_info.get("all_years") or [api_year]))
+        elif book_info.get("exact_edition_matched"):
             mismatched_details.append(f"Năm xuất bản đúng của lần tái bản này: {api_year}")
         else:
             years_hint = ", ".join(sorted(pooled_years)) if pooled_years else api_year
@@ -479,6 +489,19 @@ def process_book_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
     cited_isbn = extract_isbn(text)
 
     candidates = []
+
+    # Sách tiếng Việt: tra Cục Xuất bản trước; khớp đủ 4/4 thì khỏi tra các nguồn quốc tế
+    if has_vietnamese_diacritics(text):
+        vn_cands, vn_ok = ppdvn.search_books(cited_title, text)
+        if vn_ok:
+            _ApiStats.ok += 1
+        else:
+            _ApiStats.failed += 1
+        candidates.extend(vn_cands)
+        for cand in vn_cands:
+            if evaluate_book_4_fields(text, cited_title, cited_year, cand, set())["score"] == 4:
+                print(f"    [BOOK] Cục Xuất bản: khớp 4/4 (số XNĐK {cand['so_xn']}) → OK")
+                return True, 0, 0
 
     if cited_isbn:
         isbn_res = lookup_book_by_isbn(cited_isbn)
