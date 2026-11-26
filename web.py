@@ -1,10 +1,13 @@
 import json
 import re
+import ssl
 import difflib
 from urllib.parse import urlparse
 
 import requests
+import urllib3
 from bs4 import BeautifulSoup
+from requests.adapters import HTTPAdapter
 
 from utils import (
     BROWSER_HEADERS,
@@ -87,14 +90,58 @@ def _meta(soup, **attrs) -> str:
     return tag["content"].strip() if tag and tag.get("content") else ""
 
 
+def _open_page(url: str, verify: bool = True):
+    return http_get(url, headers=BROWSER_HEADERS, timeout=20, allow_redirects=True, stream=True, verify=verify)
+
+
+class _LegacyTLSAdapter(HTTPAdapter):
+    """Cho phép bắt tay TLS với máy chủ cấu hình cũ (vd. khóa Diffie-Hellman 1024 bit -> lỗi DH_KEY_TOO_SMALL)."""
+    def __init__(self, verify: bool = True, **kwargs):
+        self._verify = verify
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, *args, **kwargs):
+        ctx = ssl.create_default_context()
+        ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
+        if not self._verify:
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        kwargs["ssl_context"] = ctx
+        return super().init_poolmanager(*args, **kwargs)
+
+
+_LEGACY_SESSIONS = {}
+
+
+def _open_page_legacy(url: str, verify: bool = True):
+    if verify not in _LEGACY_SESSIONS:
+        sess = requests.Session()
+        sess.mount("https://", _LegacyTLSAdapter(verify=verify))
+        _LEGACY_SESSIONS[verify] = sess
+    return _LEGACY_SESSIONS[verify].get(url, headers=BROWSER_HEADERS, timeout=20,
+                                        allow_redirects=True, stream=True, verify=verify)
+
+
 def fetch_web_metadata(url: str) -> dict:
     try:
-        resp = http_get(url, headers=BROWSER_HEADERS, timeout=20, allow_redirects=True, stream=True)
+        try:
+            resp = _open_page(url)
+        except requests.exceptions.SSLError as e:
+            # Lỗi SSL mà trình duyệt vẫn mở được: khóa mã hóa cũ (DH_KEY_TOO_SMALL) hoặc thiếu chứng chỉ trung gian.
+            # Chương trình chỉ ĐỌC thông tin công khai của trang nên cho thử lại với cấu hình nới lỏng.
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            verify = "CERTIFICATE_VERIFY_FAILED" not in str(e)
+            try:
+                resp = _open_page_legacy(url, verify=verify)
+            except requests.exceptions.SSLError:
+                resp = _open_page_legacy(url, verify=False)
+    except requests.exceptions.SSLError:
+        return {"status": "ERROR", "message": f"chứng chỉ bảo mật (SSL) không hợp lệ: {url}"}
     except requests.exceptions.ConnectionError as e:
         msg = str(e)
         if re.search(r'NameResolution|Name or service not known|getaddrinfo|nodename nor servname|No address associated', msg):
             return {"status": "NOT_FOUND", "message": f"Tên miền không tồn tại: {url}"}
-        return {"status": "ERROR", "message": f"không kết nối được tới {url}"}
+        return {"status": "ERROR", "message": f"máy chủ từ chối hoặc ngắt kết nối: {url}"}
     except requests.exceptions.Timeout:
         return {"status": "ERROR", "message": f"trang phản hồi quá chậm: {url}"}
     except Exception as e:
@@ -225,7 +272,7 @@ def process_web_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
         or (site_words and sum(word_in(w, text_key) for w in site_words) * 3 >= len(site_words) * 2)
     )
     if not site_ok:
-        shown = site_name or label
+        shown = site_name
         add_review_comment(doc, para, f"Thiếu hoặc sai tên trang web. Tên trang web chính thức: \"{shown}\".")
         comments += 1
         print(f"    [WEB-SITE] MISMATCH ({shown})")
