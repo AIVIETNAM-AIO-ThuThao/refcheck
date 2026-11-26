@@ -1,6 +1,7 @@
 import html
 import re
 import time
+import os
 import unicodedata
 from datetime import date
 from pathlib import Path
@@ -18,7 +19,7 @@ INPUT_FILE = Path(r"C:\Users\ThuThao\Desktop\TÀI LIỆU THAM KHẢO1.docx")   #
 OUTPUT_FILE = INPUT_FILE.with_name(INPUT_FILE.stem + "_reviewed.docx")
 AUTHOR_NAME = "BTV"
 EMAIL = "akitokusa@example.com"   # ĐỔI thành email thật để Crossref/OpenAlex xếp vào "polite pool"
-
+GOOGLE_BOOKS_API_KEY = os.environ.get("GOOGLE_BOOKS_API_KEY", "")
 TITLE_MATCH_THRESHOLD = 0.85
 WEB_TITLE_THRESHOLD = 0.78
 REQUEST_DELAY = 0.5               # khoảng cách tối thiểu (giây) giữa 2 request tới CÙNG một máy chủ

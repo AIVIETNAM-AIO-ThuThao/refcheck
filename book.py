@@ -5,6 +5,7 @@ import html
 from utils import (
     CURRENT_YEAR,
     EMAIL,
+    GOOGLE_BOOKS_API_KEY,
     HIGHLIGHT_UNVERIFIED_VN,
     TITLE_MATCH_THRESHOLD,
     add_review_comment,
@@ -62,6 +63,8 @@ class _ApiStats:
 
 
 def _get_json(url: str, params: dict):
+    if url == GOOGLE_BOOKS_API and GOOGLE_BOOKS_API_KEY:
+        params = {**params, "key": GOOGLE_BOOKS_API_KEY}
     try:
         resp = http_get(url, params=params, timeout=12)
     except Exception:
