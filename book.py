@@ -500,7 +500,7 @@ def process_book_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
 
     pooled_years = collect_all_valid_years(candidates, cited_title)
 
-        def _rank(ev):
+    def _rank(ev):
         # Ưu tiên: khớp nhiều trường > đúng lần tái bản > có dữ liệu NXB > năm gần năm trích dẫn > tiêu đề giống
         info_ = ev["book_info"]
         y = info_.get("year", "")
