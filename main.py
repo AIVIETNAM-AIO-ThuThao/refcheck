@@ -70,6 +70,8 @@ def review_document(in_path, out_path, on_progress=None) -> dict:
     stats = {k: {"found": 0, "clean": 0, "total": len(queues[k])} for k in queues}
     total_items = sum(len(q) for q in queues.values())
     done = 0
+    total_commented = 0
+    total_highlighted = 0
 
     for step, (key, label, handler) in enumerate(flows, start=1):
         print(f"\n--- [{step}/3] CHẠY LUỒNG {label}: {len(queues[key])} mục ---")
