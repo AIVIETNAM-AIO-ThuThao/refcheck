@@ -214,7 +214,7 @@ def _check_record_fields(doc, para, text: str, rec: dict, cited_title: str, chec
 def _not_found(doc, para, text: str, message: str) -> tuple[bool, int, int]:
     """Không tìm thấy: tài liệu tiếng Việt chỉ ghi chú (không tô vàng) trừ khi bật HIGHLIGHT_UNVERIFIED_VN."""
     if has_vietnamese_diacritics(text) and not HIGHLIGHT_UNVERIFIED_VN:
-        add_review_comment(doc, para, message + " Tài liệu trong nước thường không đăng ký trên Crossref — cần kiểm tra thủ công.")
+        add_review_comment(doc, para, message + " Tài liệu trong nước không có trên Crossref — cần kiểm tra thủ công.")
         return False, 1, 0
     add_review_comment(doc, para, message)
     highlight_whole_para(para)
@@ -247,7 +247,7 @@ def process_journal_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
             print(f"    [DOI] {cited_doi} → NOT_FOUND, thử tìm bằng tiêu đề")
             sr = search_by_title(cited_title, cited_year, text)
             if sr["status"] == "FOUND":
-                add_review_comment(doc, para, f"DOI '{cited_doi}' không tồn tại. DOI đúng: {sr['doi']}.")
+                add_review_comment(doc, para, f"DOI '{cited_doi}' không tồn tại. DOI đúng: https://doi.org/{sr['doi']}.")
                 comments = 1 + _check_record_fields(doc, para, text, sr, cited_title, check_title=False)
                 return True, comments, 0
             if sr["status"] == "ERROR":
@@ -267,6 +267,6 @@ def process_journal_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
     print(f"    [TITLE] {cited_title[:50]}... → FOUND (sim={sr['similarity']:.2f})")
     comments = _check_record_fields(doc, para, text, sr, cited_title, check_title=False)
     if sr.get("doi"):
-        add_review_comment(doc, para, f"Thiếu DOI. DOI đúng: {sr['doi']}.")
+        add_review_comment(doc, para, f"Thiếu DOI. DOI đúng: https://doi.org/{sr['doi']}.")
         comments += 1
     return True, comments, 0
