@@ -47,7 +47,7 @@ def _process_one(handler, doc, para, text):
 def _save(doc, out_path):
     try:
         doc.save(str(out_path))
-        return out_pathdef 
+        return out_path 
     except PermissionError:
         alt = out_path.with_name(f"{out_path.stem}_{datetime.now():%Y%m%d_%H%M%S}{out_path.suffix}")
         print(f"  File {out_path.name} đang mở trong Word → lưu sang {alt.name}")
