@@ -271,7 +271,7 @@ def process_web_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
         or (site_name and word_in(site_name, text_key))
         or (site_words and sum(word_in(w, text_key) for w in site_words) * 3 >= len(site_words) * 2)
     )
-        if not site_ok and site_name:          # trang không khai báo tên chính thức thì không đủ căn cứ để báo sai
+    if not site_ok and site_name:          # trang không khai báo tên chính thức thì không đủ căn cứ để báo sai
         shown = site_name
         add_review_comment(doc, para, f"Thiếu hoặc sai tên trang web. Tên trang web chính thức: \"{shown}\".")
         comments += 1
