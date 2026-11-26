@@ -27,6 +27,7 @@ from utils import (
 
 CROSSREF_API = "https://api.crossref.org/works"
 DATACITE_API = "https://api.datacite.org/dois/"
+OPENALEX_API = "https://api.openalex.org/works"
 CROSSREF_HEADERS = {"User-Agent": f"RefChecker/1.0 (mailto:{EMAIL})"}
 
 NOTICE_RE = re.compile(r'^\s*(correction|corrigendum|erratum|retraction|retracted|expression of concern)\b', re.IGNORECASE)
@@ -161,6 +162,53 @@ def search_by_title(title: str, cited_year: str = "", full_text: str = "") -> di
     return best
 
 
+def search_openalex(title: str, cited_year: str = "", full_text: str = "") -> dict:
+    """Dự phòng khi Crossref không có: OpenAlex gồm cả bài hội nghị không có DOI Crossref (NeurIPS, ICLR, ICML...)
+    và bản arXiv (DOI DataCite 10.48550/...). Chỉ dùng để xác nhận bài có thật, tác giả, năm và DOI nếu có."""
+    if not title or len(title.strip()) < 10:
+        return {"status": "NO_TITLE", "message": "Thiếu tiêu đề bài báo."}
+    try:
+        resp = http_get(OPENALEX_API, params={"search": title, "per-page": 10, "mailto": EMAIL})
+        if resp.status_code != 200:
+            return {"status": "ERROR", "message": f"Lỗi tìm kiếm OpenAlex (HTTP {resp.status_code})."}
+        works = resp.json().get("results", [])
+    except Exception as e:
+        return {"status": "ERROR", "message": f"Lỗi tìm kiếm OpenAlex: {e}"}
+
+    cited_key = norm_key(full_text or title)
+    best, best_key = None, None
+    for w in works:
+        w_title = w.get("display_name") or w.get("title") or ""
+        if not w_title:
+            continue
+        sim = title_similarity(title, [w_title], full_text)
+        names = [a.get("author", {}).get("display_name", "") for a in w.get("authorships", [])]
+        authors = parse_author_dicts([n for n in names if n], source="book_api")
+        year = str(w.get("publication_year") or "")
+        year_ok = bool(cited_year and year and abs(int(year) - int(cited_year)) <= 1)
+        author_ok = bool(authors) and word_in(authors[0]["family"], cited_key)
+        key = (sim >= TITLE_MATCH_THRESHOLD and (author_ok or year_ok), author_ok + year_ok, sim)
+        if best_key is None or key > best_key:
+            doi = re.sub(r'^https?://(dx\.)?doi\.org/', '', w.get("doi") or "", flags=re.IGNORECASE)
+            best, best_key = {"status": "FOUND", "source": "openalex", "similarity": sim, "title": w_title,
+                              "title_variants": [w_title], "authors": authors, "year": year, "doi": doi,
+                              "container_titles": [], "page": "", "type": w.get("type", "")}, key
+    if best is None or not best_key[0]:
+        return {"status": "LOW_MATCH", "message": "Không tìm thấy bài viết khớp trên Crossref và OpenAlex."}
+    return best
+
+
+def _search_any(title: str, cited_year: str, full_text: str) -> dict:
+    """Tìm trên Crossref; không thấy thì tìm tiếp trên OpenAlex."""
+    sr = search_by_title(title, cited_year, full_text)
+    if sr["status"] in ("NOT_FOUND", "LOW_MATCH"):
+        oa = search_openalex(title, cited_year, full_text)
+        if oa["status"] == "FOUND":
+            print(f"    [OPENALEX] Tìm thấy: {oa['title'][:50]}... (DOI: {oa['doi'] or 'không có'})")
+            return oa
+    return sr
+
+
 # ---------------------------------------------------------------- đối chiếu từng trường
 def check_journal_in_text(cited_text: str, registry_journals, lenient: bool = False) -> dict:
     if isinstance(registry_journals, str):
@@ -253,9 +301,13 @@ def process_journal_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
 
         if doi_check["status"] == "DOI_NOT_FOUND":
             print(f"    [DOI] {cited_doi} → NOT_FOUND, thử tìm bằng tiêu đề")
-            sr = search_by_title(cited_title, cited_year, text)
+            sr = _search_any(cited_title, cited_year, text)
             if sr["status"] == "FOUND":
-                add_review_comment(doc, para, f"DOI '{cited_doi}' không tồn tại. DOI đúng: https://doi.org/{sr['doi']}.")
+                if sr.get("doi"):
+                    add_review_comment(doc, para, f"DOI '{cited_doi}' không tồn tại. DOI đúng: https://doi.org/{sr['doi']}.")
+                else:
+                    add_review_comment(doc, para, f"DOI '{cited_doi}' không tồn tại. Bài viết có thật nhưng không có DOI "
+                                                  f"— đề nghị bỏ DOI hoặc thay bằng đường dẫn tới bài.")
                 comments = 1 + _check_record_fields(doc, para, text, sr, cited_title, check_title=False)
                 return True, comments, 0
             if sr["status"] == "ERROR":
@@ -266,7 +318,7 @@ def process_journal_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
         return _unchecked(doc, para, doi_check.get("message", "lỗi kết nối"))
 
     # Bước 2: Không có DOI -> tìm bằng tiêu đề
-    sr = search_by_title(cited_title, cited_year, text)
+    sr = _search_any(cited_title, cited_year, text)
     if sr["status"] == "ERROR":
         return _unchecked(doc, para, sr["message"])
     if sr["status"] != "FOUND":

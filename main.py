@@ -6,10 +6,12 @@ from docx import Document
 
 from utils import (
     EMAIL,
+    HIGHLIGHT_UNCHECKED,
     INPUT_FILE,
     OUTPUT_FILE,
     add_review_comment,
     classify_reference,
+    highlight_whole_para,
     is_section_header,
     strip_list_marker,
 )
@@ -19,9 +21,11 @@ import journal
 
 
 def _process_one(handler, doc, para, text):
-    """Chạy 1 mục; lỗi ở 1 mục không làm hỏng cả lần chạy."""
+    """Chạy 1 mục; lỗi ở 1 mục không làm hỏng cả lần chạy.
+    Mục nào có comment chỉ ra vấn đề (không tìm thấy, cần sửa, cần bổ sung) thì tô vàng cả đoạn."""
+    n_before = len(list(doc.comments))
     try:
-        return handler(doc, para, text)
+        ok, c_add, h_add = handler(doc, para, text)
     except Exception as e:
         print(f"    [LỖI] {type(e).__name__}: {e}")
         traceback.print_exc(limit=2)
@@ -31,11 +35,19 @@ def _process_one(handler, doc, para, text):
         except Exception:
             return False, 0, 0
 
+    if c_add and not h_add:
+        new_comments = [c.text for c in list(doc.comments)[n_before:]]
+        has_problem = any(not t.startswith("Chưa kiểm tra tự động được") for t in new_comments)
+        if has_problem or HIGHLIGHT_UNCHECKED:
+            highlight_whole_para(para)
+            h_add = 1
+    return ok, c_add, h_add
+
 
 def _save(doc, out_path):
     try:
         doc.save(str(out_path))
-        return out_path
+        return out_pathdef 
     except PermissionError:
         alt = out_path.with_name(f"{out_path.stem}_{datetime.now():%Y%m%d_%H%M%S}{out_path.suffix}")
         print(f"  File {out_path.name} đang mở trong Word → lưu sang {alt.name}")

@@ -18,7 +18,7 @@ from docx.text.run import Run
 INPUT_FILE = Path(r"C:\Users\ThuThao\Desktop\TÀI LIỆU THAM KHẢO1.docx")   # có thể truyền qua dòng lệnh
 OUTPUT_FILE = INPUT_FILE.with_name(INPUT_FILE.stem + "_reviewed.docx")
 AUTHOR_NAME = "BTV"
-EMAIL = "akitokusa@example.com"   # ĐỔI thành email thật để Crossref/OpenAlex xếp vào "polite pool"
+EMAIL = os.environ.get("REFCHECK_EMAIL", "akitokusa@gmail.com")   # đọc từ Secrets REFCHECK_EMAIL; ĐỔI email mẫu nếu chạy trên máy
 GOOGLE_BOOKS_API_KEY = os.environ.get("GOOGLE_BOOKS_API_KEY", "")
 TITLE_MATCH_THRESHOLD = 0.85
 WEB_TITLE_THRESHOLD = 0.78
@@ -474,8 +474,8 @@ def check_authors(cited_text: str, registry_authors: list) -> dict:
     cited_key = norm_key(strip_urls_dois(cited_text))
     if ETAL_RE.search(cited_text):
         to_check = authors[:1]                                  # "et al." / "và cộng sự": chỉ cần tác giả đầu
-    elif len(authors) > 20 and ('…' in cited_text or '...' in cited_text or '. . .' in cited_text):
-        to_check = authors[:19] + authors[-1:]                  # APA 7: 19 tác giả đầu ... tác giả cuối
+    elif '…' in cited_text or '...' in cited_text or '. . .' in cited_text:
+        to_check = authors[:3] + authors[-1:]                   # có "...": kiểm tra 3 tác giả đầu và tác giả cuối
     else:
         to_check = authors
 

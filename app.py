@@ -89,4 +89,5 @@ if st.session_state.results:
         st.download_button("⬇️ Tải tất cả (.zip)", buf.getvalue(), file_name="ket_qua_kiem_tra_TLTK.zip",
                            mime="application/zip", key="dl_zip")
 
-st.caption("Lưu ý: Tài liệu tiếng Việt không có trên CSDL quốc tế chỉ được ghi chú 'cần kiểm tra thủ công', không tô vàng.")
+st.caption("Lưu ý: Mục được tô vàng là mục có vấn đề: không tìm thấy, sai hoặc thiếu thông tin. "
+           )
