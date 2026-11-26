@@ -117,7 +117,7 @@ def lookup_doi(doi: str) -> dict:
 
 
 def search_by_title(title: str, cited_year: str = "", full_text: str = "") -> dict:
-    query = title
+    query = full_text or title
     if title_extraction_failed(title, full_text) and full_text:
         query = full_text                        # Crossref query.bibliographic xử lý được cả dòng trích dẫn
     if not query or len(query.strip()) < 10:
@@ -136,6 +136,7 @@ def search_by_title(title: str, cited_year: str = "", full_text: str = "") -> di
         return {"status": "NOT_FOUND", "message": "Không tìm thấy bài viết tương ứng trên Crossref."}
 
     cited_is_notice = bool(NOTICE_RE.search(title or ""))
+    cited_key = norm_key(full_text or title)
     best, best_key = None, None
     for item in items:
         rec = _crossref_record(item)
@@ -145,12 +146,15 @@ def search_by_title(title: str, cited_year: str = "", full_text: str = "") -> di
             continue                              # bỏ các bản đính chính/rút bài trùng tiêu đề
         sim = title_similarity(title, rec["title_variants"], full_text)
         year_ok = bool(cited_year and rec["year"] and abs(int(rec["year"]) - int(cited_year)) <= 1)
-        key = (sim >= TITLE_MATCH_THRESHOLD, year_ok, rec["type"] == "journal-article", sim)
+        author_ok = bool(rec["authors"]) and word_in(rec["authors"][0]["family"], cited_key)
+        # Cùng một bài thì phải trùng ít nhất tác giả đầu HOẶC năm; tiêu đề giống thôi chưa đủ
+        same_work = sim >= TITLE_MATCH_THRESHOLD and (author_ok or year_ok)
+        key = (same_work, author_ok + year_ok, sim)
         if best_key is None or key > best_key:
             best, best_key = rec, key
             best["similarity"] = sim
 
-    if best is None or best["similarity"] < TITLE_MATCH_THRESHOLD:
+    if best is None or not best_key[0]:
         return {"status": "LOW_MATCH", "message": "Không tìm thấy bài viết khớp trên Crossref."}
 
     best["status"] = "FOUND"
