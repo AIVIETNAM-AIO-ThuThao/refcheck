@@ -24,7 +24,7 @@ st.title("📚 Kiểm tra Tài liệu tham khảo")
 st.write(
     "Tải lên một hoặc nhiều file Word (.docx) **chỉ chứa Danh mục Tài liệu tham khảo**. "
     "Chương trình đối chiếu với Crossref, DataCite, Google Books, Open Library, OpenAlex "
-    "và trang web gốc, rồi trả về file có **comment** (BTV) và **tô vàng** các mục không tìm thấy."
+    "và trang web gốc, rồi trả về file có **comment** (BTV)."
 )
 
 files = st.file_uploader("Chọn file .docx (có thể chọn nhiều file)", type=["docx"], accept_multiple_files=True)
@@ -91,3 +91,9 @@ if st.session_state.results:
 
 st.caption("Lưu ý: Mục được tô vàng là mục có vấn đề: không tìm thấy, sai hoặc thiếu thông tin. "
            )
+try:
+    import resource
+    peak_mb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    st.sidebar.caption(f"RAM cao nhất đã dùng: {peak_mb:.0f} MB / 1024 MB")
+except ImportError:
+    pass
