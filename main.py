@@ -18,6 +18,7 @@ from utils import (
 import web
 import book
 import journal
+import legal
 
 
 def _process_one(handler, doc, para, text):
@@ -64,7 +65,7 @@ def review_document(in_path, out_path, on_progress=None) -> dict:
 
     # File chỉ chứa danh mục TLTK: mỗi đoạn (trừ tiêu đề và dòng trống) là một tài liệu
     header_para = None
-    queues = {"WEB": [], "BOOK": [], "JOURNAL": []}
+    queues = {"WEB": [], "BOOK": [], "JOURNAL": [], "LEGAL": []}
     for idx, para in enumerate(doc.paragraphs, start=1):
         if is_section_header(para.text):
             header_para = header_para or para
@@ -72,12 +73,14 @@ def review_document(in_path, out_path, on_progress=None) -> dict:
         text = strip_list_marker(para.text)
         if len(text) < 20:
             continue
-        queues[classify_reference(text)].append((idx, para, text))
+        kind = "LEGAL" if legal.is_legal_document(text) else classify_reference(text)
+        queues[kind].append((idx, para, text))
 
     flows = [
         ("WEB", "INTERNET (web.py)", web.process_web_paragraph),
         ("BOOK", "SÁCH (book.py)", book.process_book_paragraph),
         ("JOURNAL", "TẠP CHÍ (journal.py)", journal.process_journal_paragraph),
+        ("LEGAL", "VĂN BẢN PHÁP QUY (legal.py)", legal.process_legal_paragraph),
     ]
     stats = {k: {"found": 0, "clean": 0, "total": len(queues[k])} for k in queues}
     total_items = sum(len(q) for q in queues.values())
@@ -86,7 +89,7 @@ def review_document(in_path, out_path, on_progress=None) -> dict:
     total_highlighted = 0
 
     for step, (key, label, handler) in enumerate(flows, start=1):
-        print(f"\n--- [{step}/3] CHẠY LUỒNG {label}: {len(queues[key])} mục ---")
+        print(f"\n--- [{step}/{len(flows)}] CHẠY LUỒNG {label}: {len(queues[key])} mục ---")
         for idx, para, text in queues[key]:
             print(f"  (Dòng {idx}) [{key}] {text[:60]}...")
             ok, c_add, h_add = _process_one(handler, doc, para, text)
@@ -109,8 +112,8 @@ def review_document(in_path, out_path, on_progress=None) -> dict:
     saved = _save(doc, out_path)
     print("\n================ HOÀN TẤT ================")
     print(f"File xuất: {saved}")
-    names = {"WEB": "Internet (web.py)   ", "BOOK": "Sách (book.py)      ", "JOURNAL": "Tạp chí (journal.py)"}
-    for key in ("WEB", "BOOK", "JOURNAL"):
+    names = {"WEB": "Internet (web.py)   ", "BOOK": "Sách (book.py)      ", "JOURNAL": "Tạp chí (journal.py)", "LEGAL": "Văn bản (legal.py) "}
+    for key in ("WEB", "BOOK", "JOURNAL", "LEGAL"):
         print(f"  - {names[key]}: tìm thấy {stats[key]['found']}/{len(queues[key])}, không có sai sót {stats[key]['clean']}")
     print(f"  - Tổng comment đã gắn   : {total_commented}")
     print(f"  - Tổng đoạn bị tô vàng  : {total_highlighted}")

@@ -121,7 +121,8 @@ def _run_job(job_id: str):
                 f["summary"] = (
                     f"{res['items']} mục · {res['comments']} comment · {res['highlights']} mục tô vàng — "
                     f"Web {s['WEB']['found']}/{s['WEB']['total']}, Sách {s['BOOK']['found']}/{s['BOOK']['total']}, "
-                    f"Tạp chí {s['JOURNAL']['found']}/{s['JOURNAL']['total']} tìm thấy")
+                    f"Tạp chí {s['JOURNAL']['found']}/{s['JOURNAL']['total']} tìm thấy"
+                    + (f", Văn bản pháp quy {s['LEGAL']['total']}" if s.get("LEGAL", {}).get("total") else ""))
                 f["saved"] = Path(res["saved"]).name
                 f["state"] = "done"
             except Exception as e:

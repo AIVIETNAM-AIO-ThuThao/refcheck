@@ -87,9 +87,11 @@ def _session() -> requests.Session:
     if _SESSION is None:
         s = requests.Session()
         retry = Retry(
-            total=3, backoff_factor=1.5,
+            total=2, connect=2, read=1,          # hết giờ chờ dữ liệu thì chỉ thử lại 1 lần
+            backoff_factor=1.0,
             status_forcelist=(429, 500, 502, 503, 504),
-            allowed_methods=("GET",), respect_retry_after_header=True,
+            allowed_methods=("GET",),
+            respect_retry_after_header=False,    # không chờ theo "Retry-After" của máy chủ (có thể vài phút)
             raise_on_status=False,
         )
         adapter = HTTPAdapter(max_retries=retry, pool_maxsize=10)
@@ -106,6 +108,9 @@ def http_get(url: str, **kwargs) -> requests.Response:
     if wait > 0:
         time.sleep(wait)
     kwargs.setdefault("timeout", 15)
+    if isinstance(kwargs["timeout"], (int, float)):
+        # tách 2 mức chờ: kết nối tối đa 5 giây, chờ dữ liệu tối đa = số giây được truyền vào
+        kwargs["timeout"] = (min(5, kwargs["timeout"]), kwargs["timeout"])
     try:
         return _session().get(url, **kwargs)
     finally:
