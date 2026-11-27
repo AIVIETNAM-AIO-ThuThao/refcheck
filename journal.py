@@ -28,6 +28,8 @@ from utils import (
 CROSSREF_API = "https://api.crossref.org/works"
 DATACITE_API = "https://api.datacite.org/dois/"
 OPENALEX_API = "https://api.openalex.org/works"
+DOI_HANDLE_API = "https://doi.org/api/handles/"   # hệ thống phân giải DOI chung: biết DOI của MỌI cơ quan cấp
+DOI_RA_API = "https://doi.org/doiRA/"              # cho biết cơ quan nào cấp DOI (Crossref, DataCite, mEDRA, JaLC...)
 CROSSREF_HEADERS = {"User-Agent": f"RefChecker/1.0 (mailto:{EMAIL})"}
 
 NOTICE_RE = re.compile(r'^\s*(correction|corrigendum|erratum|retraction|retracted|expression of concern)\b', re.IGNORECASE)
@@ -97,6 +99,32 @@ def lookup_doi_datacite(doi: str) -> dict:
     }
 
 
+def check_doi_handle(doi: str) -> dict:
+    """Hỏi doi.org xem DOI có tồn tại không (kể cả DOI của mEDRA, JaLC, KISTI, CNKI... hoặc DOI Crossref bị ẩn)."""
+    try:
+        resp = http_get(DOI_HANDLE_API + quote(doi, safe='/'), headers={"User-Agent": "RefChecker/1.0"})
+    except Exception as e:
+        return {"status": "ERROR", "message": f"Lỗi kết nối doi.org: {e}"}
+    if resp.status_code == 404:
+        return {"status": "NOT_FOUND"}
+    if resp.status_code != 200:
+        return {"status": "ERROR", "message": f"doi.org HTTP {resp.status_code}"}
+    try:
+        if resp.json().get("responseCode") != 1:
+            return {"status": "NOT_FOUND"}
+    except ValueError:
+        return {"status": "ERROR", "message": "doi.org trả về dữ liệu không đọc được"}
+    ra = ""
+    try:
+        r2 = http_get(DOI_RA_API + quote(doi, safe='/'), headers={"User-Agent": "RefChecker/1.0"})
+        if r2.status_code == 200:
+            data = r2.json()
+            ra = (data[0] if isinstance(data, list) and data else {}).get("RA", "")
+    except Exception:
+        pass
+    return {"status": "EXISTS", "ra": ra}
+
+
 def lookup_doi(doi: str) -> dict:
     doi = clean_doi(doi)
     url = f"{CROSSREF_API}/{quote(doi, safe='/')}"
@@ -109,6 +137,10 @@ def lookup_doi(doi: str) -> dict:
         dc = lookup_doi_datacite(doi)
         if dc["status"] in ("OK", "ERROR"):
             return dc                                   # lỗi mạng ở DataCite KHÔNG được coi là "DOI không tồn tại"
+        h = check_doi_handle(doi)                       # Crossref và DataCite đều không có -> hỏi doi.org
+        if h["status"] == "EXISTS":
+            return {"status": "DOI_EXISTS", "doi": doi, "ra": h.get("ra", ""),
+                    "message": f"DOI '{doi}' hợp lệ (cơ quan cấp: {h.get('ra') or 'không rõ'})."}
         return {"status": "DOI_NOT_FOUND",
                 "message": f"DOI '{doi}' không tồn tại (đã thử Crossref và DataCite)."}
     if resp.status_code != 200:
@@ -318,6 +350,18 @@ def process_journal_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
             print(f"    [DOI] {cited_doi} → OK")
             comments = _check_record_fields(doc, para, text, doi_check, cited_title, check_title=True)
             return True, comments, 0
+
+        if doi_check["status"] == "DOI_EXISTS":
+            # DOI có thật nhưng do cơ quan khác Crossref/DataCite cấp -> lấy dữ liệu đối chiếu từ OpenAlex
+            print(f"    [DOI] {cited_doi} → có trên doi.org ({doi_check.get('ra') or '?'}), thử OpenAlex")
+            oa = lookup_doi_openalex(cited_doi)
+            if oa["status"] == "OK":
+                comments = _check_record_fields(doc, para, text, oa, cited_title, check_title=True)
+                return True, comments, 0
+            add_review_comment(doc, para, f"Cần kiểm tra thủ công: DOI hợp lệ (do {doi_check.get('ra') or 'một cơ quan khác'} cấp) "
+                                          f"nhưng không lấy được dữ liệu để đối chiếu tác giả, tiêu đề, tạp chí.")
+            highlight_whole_para(para)
+            return True, 1, 1
 
         if doi_check["status"] == "DOI_NOT_FOUND":
             print(f"    [DOI] {cited_doi} → NOT_FOUND, thử tìm bằng tiêu đề")
