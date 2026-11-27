@@ -2,6 +2,7 @@ import re
 import difflib
 import html
 
+import loc
 import ppdvn
 from utils import (
     CURRENT_YEAR,
@@ -472,6 +473,18 @@ def evaluate_book_4_fields(
     }
 
 
+def _loc_candidates(text: str, cited_title: str, cited_isbn: str) -> list:
+    """Tra Library of Congress; trả về ứng viên theo khuôn chung (mỗi lần tái bản là một bản ghi)."""
+    hint = text.split("(")[0]
+    first_family = re.split(r"[,&;]", hint)[0].strip(" .") if hint.strip() else ""
+    recs, ok = loc.search(cited_title, first_family, cited_isbn)
+    if ok:
+        _ApiStats.ok += 1
+    else:
+        _ApiStats.failed += 1
+    return loc.to_candidates(recs, extract_edition_number, extract_edition_number(text))
+
+
 def _not_found(doc, para, text: str, message: str) -> tuple[bool, int, int]:
     if has_vietnamese_diacritics(text) and not HIGHLIGHT_UNVERIFIED_VN:
         add_review_comment(doc, para, message + " Sách trong nước thường không có trên các CSDL quốc tế — cần kiểm tra thủ công.")
@@ -503,6 +516,17 @@ def process_book_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
                 print(f"    [BOOK] Cục Xuất bản: khớp 4/4 (số XNĐK {cand['so_xn']}) → OK")
                 return True, 0, 0
 
+    # Sách nước ngoài có ISBN hoặc ghi lần tái bản: tra Library of Congress trước
+    loc_done = False
+    if not has_vietnamese_diacritics(text) and (cited_isbn or extract_edition_number(text)):
+        loc_done = True
+        loc_cands = _loc_candidates(text, cited_title, cited_isbn)
+        candidates.extend(loc_cands)
+        for cand in loc_cands:
+            if evaluate_book_4_fields(text, cited_title, cited_year, cand, set())["score"] == 4:
+                print(f"    [BOOK] Library of Congress: khớp 4/4 ({cand['edition'] or 'không ghi lần XB'}, {cand['year']}) → OK")
+                return True, 0, 0
+
     if cited_isbn:
         isbn_res = lookup_book_by_isbn(cited_isbn)
         if isbn_res.get("status") == "OK":
@@ -513,6 +537,13 @@ def process_book_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
         candidates.extend(lookup_exact_edition_year(cited_title, edition_num))
 
     candidates.extend(search_book_candidates(cited_title, cited_text=text))
+
+    # Các nguồn khác chưa khớp đủ: tra thêm Library of Congress (nếu chưa tra)
+    if not loc_done and not has_vietnamese_diacritics(text):
+        pooled_tmp = collect_all_valid_years(candidates, cited_title)
+        if not any(evaluate_book_4_fields(text, cited_title, cited_year, c, pooled_tmp)["score"] == 4
+                   for c in candidates):
+            candidates.extend(_loc_candidates(text, cited_title, cited_isbn))
 
     if not candidates:
         if _ApiStats.failed and not _ApiStats.ok:
