@@ -3,6 +3,7 @@ import difflib
 import html
 
 import loc
+import nlv
 import ppdvn
 from utils import (
     CURRENT_YEAR,
@@ -377,6 +378,8 @@ def evaluate_book_4_fields(
     """Chấm điểm khớp trên 4 thành phần: Tên tác giả, Tiêu đề, Nhà xuất bản, Năm xuất bản."""
     matched_fields = []
     mismatched_details = []
+    if book_info.get("source") in ("ppdvn", "nlv"):
+        cited_title = ppdvn.clean_title(cited_title)   # nguồn trong nước: so tên sách sau khi bỏ "Giáo trình", "(Tái bản…)"
 
     # 1. Tên tác giả
     api_authors = book_info.get("authors", [])
@@ -394,7 +397,8 @@ def evaluate_book_4_fields(
     elif author_hint_norm and len(author_hint_norm) > 4 and author_hint_norm in desc_norm:
         matched_fields.append("Tên tác giả/dịch giả")
     elif book_info.get("author_text"):
-        mismatched_details.append(f"Tác giả theo Cục Xuất bản: {book_info['author_text']}")
+        src = "Thư viện Quốc gia" if book_info.get("source") == "nlv" else "Cục Xuất bản"
+        mismatched_details.append(f"Tác giả theo {src}: {book_info['author_text']}")
     elif api_authors:
         all_formatted = [format_author_apa(a.get("family", ""), a.get("given", ""))
                          for a in api_authors if a.get("family")]
@@ -457,6 +461,9 @@ def evaluate_book_4_fields(
         if book_info.get("source") == "ppdvn":
             mismatched_details.append("Năm xác nhận đăng ký xuất bản tại Cục Xuất bản: "
                                       + ", ".join(book_info.get("all_years") or [api_year]))
+        elif book_info.get("source") == "nlv":
+            mismatched_details.append("Năm xuất bản theo Thư viện Quốc gia: "
+                                      + ", ".join(book_info.get("all_years") or [api_year]))
         elif book_info.get("exact_edition_matched"):
             mismatched_details.append(f"Năm xuất bản đúng của lần tái bản này: {api_year}")
         else:
@@ -514,6 +521,18 @@ def process_book_paragraph(doc, para, text: str) -> tuple[bool, int, int]:
         for cand in vn_cands:
             if evaluate_book_4_fields(text, cited_title, cited_year, cand, set())["score"] == 4:
                 print(f"    [BOOK] Cục Xuất bản: khớp 4/4 (số XNĐK {cand['so_xn']}) → OK")
+                return True, 0, 0
+
+        # Chưa khớp đủ ở Cục Xuất bản (hoặc sách cũ chưa có trên hệ thống) -> tra Thư viện Quốc gia
+        nlv_cands, nlv_ok = nlv.search_books(cited_title, text)
+        if nlv_ok:
+            _ApiStats.ok += 1
+        else:
+            _ApiStats.failed += 1
+        candidates.extend(nlv_cands)
+        for cand in nlv_cands:
+            if evaluate_book_4_fields(text, cited_title, cited_year, cand, set())["score"] == 4:
+                print(f"    [BOOK] Thư viện Quốc gia: khớp 4/4 ({cand['publisher']}, {cand['year']}) → OK")
                 return True, 0, 0
 
     # Sách nước ngoài có ISBN hoặc ghi lần tái bản: tra Library of Congress trước
